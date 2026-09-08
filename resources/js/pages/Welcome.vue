@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 interface Profile {
     id: number;
@@ -44,105 +44,88 @@ const props = defineProps<{
     posts: Post[];
 }>();
 
-const age = computed(() => {
-    const today = new Date();
-    const birthdate = new Date(today.getFullYear() - 18, 0, 15);
-    return birthdate.toISOString().split('T')[0];
-});
+/* ------------------------------------------------------------------
+ * Textes de l'offre (carte "Mon VIP" sous la grille).
+ * Le prix réel et le paiement sont gérés par le script Prelinker dans la
+ * popup ; cette carte est un rappel visuel. Modifie les valeurs ici si
+ * ton offre change.
+ * ------------------------------------------------------------------ */
+const OFFER = {
+    price: '1.04',
+    per: 'par semaine',
+    perDay: 'soit 0.15 € / jour',
+    was: 'au lieu de 28.93 € pour 2 semaines',
+    features: [
+        'Toutes mes photos & vidéos, sans flou',
+        'Messagerie privée avec moi, illimitée',
+        'Mes lives & appels vidéo en direct',
+        'Accès aux profils premium & rencontres',
+        'Paiement sécurisé, 100 % discret',
+    ],
+};
 
 const key = ref(0);
-const activeTab = ref<'tout' | 'live' | 'rencontre'>('tout');
-const displayMode = ref<'list' | 'grid'>('list');
+const activeTab = ref<'posts' | 'live' | 'rencontre'>('posts');
 const showStickyBar = ref(false);
 const showRencontreModal = ref(false);
-const actionBarRef = ref<HTMLElement | null>(null);
-const actionBarTop = ref(0);
+const stickyAnchorRef = ref<HTMLElement | null>(null);
 
-const filteredPosts = computed(() => {
-    return props.posts.filter(post => {
-        if (activeTab.value === 'tout') {
-            return post.type === 'photo' || post.type === 'video';
-        } else if (activeTab.value === 'live') {
-            return post.type === 'live';
-        } else if (activeTab.value === 'rencontre') {
-            return post.type === 'rencontre';
-        }
-    });
-});
+const postsFeed = computed(() =>
+    props.posts.filter((p) => p.type === 'photo' || p.type === 'video'),
+);
+const liveFeed = computed(() => props.posts.filter((p) => p.type === 'live'));
 
+const visiblePosts = computed(() =>
+    activeTab.value === 'live' ? liveFeed.value : postsFeed.value,
+);
+
+const hasLivePost = computed(() => props.posts.some((p) => p.type === 'live'));
+
+const handle = computed(
+    () => '@' + props.profile.name.toLowerCase().replace(/\s+/g, ''),
+);
 
 function cleanupSelector() {
-  const el = document.querySelector('#selector')
-  if (el) el.innerHTML = ''
+    const el = document.querySelector('#selector');
+    if (el) el.innerHTML = '';
 }
 
-watch(() => showRencontreModal.value, async (isOpen) => {
-  if (!isOpen) {
-    // à la fermeture: on nettoie
-    cleanupSelector()
-  } else {
-    // optionnel : à l’ouverture, on assure un DOM clean avant injection
-    await nextTick()
-    cleanupSelector()
-  }
-})
+watch(
+    () => showRencontreModal.value,
+    async (isOpen) => {
+        if (!isOpen) {
+            cleanupSelector();
+        } else {
+            await nextTick();
+            cleanupSelector();
+        }
+    },
+);
 
-// Check if one post is type live
-const hasLivePost = computed(() => props.posts.some(post => post.type === 'live'));
+const isLive = () =>
+    props.posts.some((post) => post.is_live) ||
+    props.profile.is_within_online_hours;
 
-const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    const time = date.toLocaleTimeString('fr-FR', {
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-
-    if (days === 0) {
-        return `Aujourd’hui à ${time}`;
-    } else if (days === 1) {
-        return `Hier à ${time}`;
-    } else if (days < 7) {
-        return `Il y a ${days} jours à ${time}`;
-    } else {
-        return date.toLocaleDateString('fr-FR', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-        }) + ` à ${time}`;
-    }
-};
-
-const isLive = () => {
-    return props.posts.some(post => post.is_live) || props.profile.is_within_online_hours;
-};
-
-const isOnline = () => {
-    return props.profile.is_online || props.profile.is_within_online_hours || isLive();
-};
+const isOnline = () =>
+    props.profile.is_online || props.profile.is_within_online_hours || isLive();
 
 const triggerDebloquerCta = () => {
     const el = document.getElementById('ctaintro');
     if (!el) return;
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    el.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
 };
 
-const triggerConclusionCta = async () => {
+const openOffer = async () => {
     showRencontreModal.value = true;
     await nextTick();
-    const el = document.getElementById('ctaintro');
-    if (!el) return;
-    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    triggerDebloquerCta();
 };
 
-// Gestion du scroll pour la sticky bar
 const handleScroll = () => {
-    if (actionBarRef.value) {
-        const rect = actionBarRef.value.getBoundingClientRect();
-        // Si la barre d'action originale est au-dessus du viewport
+    if (stickyAnchorRef.value) {
+        const rect = stickyAnchorRef.value.getBoundingClientRect();
         showStickyBar.value = rect.bottom < 0;
     }
 };
@@ -150,9 +133,10 @@ const handleScroll = () => {
 let ptScriptEl: HTMLScriptElement | null = null;
 
 function loadExternalScript(src: string): Promise<void> {
-    
     return new Promise((resolve, reject) => {
-        const existing = document.querySelector(`script[data-ptprelinker="true"][src="${src}"]`) as HTMLScriptElement | null;
+        const existing = document.querySelector(
+            `script[data-ptprelinker="true"][src="${src}"]`,
+        ) as HTMLScriptElement | null;
         if (existing) return resolve();
 
         const s = document.createElement('script');
@@ -160,20 +144,16 @@ function loadExternalScript(src: string): Promise<void> {
         s.async = true;
         s.defer = true;
         s.setAttribute('data-ptprelinker', 'true');
-
         s.onload = () => resolve();
-        s.onerror = () => reject(new Error(`Impossible de charger le script: ${src}`));
-
+        s.onerror = () =>
+            reject(new Error(`Impossible de charger le script: ${src}`));
         document.head.appendChild(s);
         ptScriptEl = s;
     });
 }
 
 onMounted(async () => {
-    window.addEventListener('scroll', handleScroll);
-    if (actionBarRef.value) {
-        actionBarTop.value = actionBarRef.value.offsetTop;
-    }
+    window.addEventListener('scroll', handleScroll, { passive: true });
 
     if (props.profile.script_url) {
         try {
@@ -191,7 +171,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
     window.removeEventListener('scroll', handleScroll);
-
     if (ptScriptEl?.parentNode) {
         ptScriptEl.parentNode.removeChild(ptScriptEl);
         ptScriptEl = null;
@@ -201,724 +180,470 @@ onUnmounted(() => {
 
 <template>
     <Head :title="profile.name">
-        <link rel="preconnect" href="https://rsms.me/" />
-        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+        <link rel="preconnect" href="https://fonts.bunny.net" />
+        <link
+            rel="stylesheet"
+            href="https://fonts.bunny.net/css?family=plus-jakarta-sans:400,500,600,700,800"
+        />
     </Head>
-    
-    <div class="min-h-screen bg-black">
-        <!-- Container centré avec bordures -->
-        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <!-- Banner Section -->
-            <div class="relative w-full h-48 sm:h-56 md:h-64 bg-gray-900 rounded-t-lg overflow-hidden" :style="profile.banner_url ? { backgroundImage: `url(${profile.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}">
-                <!-- Overlay gradient -->
-                <div class="absolute inset-0 bg-gradient-to-b from-transparent to-black/60"></div>
 
-                <!-- Name en haut à gauche -->
-                <!-- <div class="absolute top-1 left-3 sm:top-2 sm:left-4 z-10">
-                    <div class="flex items-center gap-2 mb-1 sm:mb-2">
-                        <h2 class="text-lg sm:text-xl md:text-2xl font-bold text-white">{{ profile.name }}</h2>
-                    </div>
-                </div> -->
-
-                <!-- en haut au centre : logo -->
-                <div class="absolute top-1 left-1/2 z-10 -translate-x-1/2 sm:top-2">
-                    <div class=" bg-transparent px-3 py-2">
-                        <img
-                            v-if="profile.logo_url"
-                            :src="profile.logo_url"
-                            alt="Logo"
-                            class="h-10 w-auto object-contain sm:h-12"
-                            loading="lazy"
-                        />
-                    </div>
-                </div>
+    <div class="mv min-h-screen">
+        <!-- Bannière -->
+        <div
+            class="mv-banner"
+            :style="
+                profile.banner_url
+                    ? { backgroundImage: `url(${profile.banner_url})` }
+                    : {}
+            "
+        >
+            <div class="mv-banner-fade"></div>
+            <div v-if="profile.logo_url" class="mv-logo">
+                <img :src="profile.logo_url" alt="Logo" loading="lazy" />
             </div>
+        </div>
+        <div class="mv-halo" aria-hidden="true"></div>
 
-            <!-- Profile Content -->
-            <div class="bg-black rounded-b-lg p-4 sm:p-6 lg:p-8" :class="{ 'pb-24 sm:pb-28': activeTab !== 'rencontre' }">
-                <!-- Profile Header + Biography with avatar inside the card -->
-                <div class="mb-6 relative bg-gray-900/40 rounded-lg p-4 sm:p-5 lg:px-2">
-                    <!-- Avatar -->
-                    <div class="absolute -top-10 sm:-top-12 left-0 sm:left-0">
-                        
-                        <!-- Live ring: sur le wrapper (pas clipé) -->
-                        <span
-                        v-if="isLive() || isOnline()"
-                        class="absolute -inset-[4px] rounded-full
-                                bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                pointer-events-none z-0"
-                        aria-hidden="true"
-                        />
-
-                        <!-- Avatar -->
-                        <div
-                            class="relative z-10 w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28
-                                rounded-full border-4 border-black bg-gray-800 overflow-hidden"
-                        >
-                            <img
+        <div class="mv-wrap">
+            <!-- En-tête profil -->
+            <div class="mv-head">
+                <div class="mv-avatar">
+                    <div class="mv-avatar-in">
+                        <img
                             v-if="profile.avatar_url"
                             :src="profile.avatar_url"
                             :alt="profile.name"
-                            class="w-full h-full object-cover"
-                            />
-                            <div v-else class="w-full h-full flex items-center justify-center text-gray-400">
-                            <svg class="w-10 h-10 sm:w-12 sm:h-12" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-                            </svg>
-                            </div>
-                        </div>
-
-                        <!-- ✅ Online dot -->
-                        <span
-                            v-if="isOnline()"
-                            class="absolute bottom-1 right-1 sm:bottom-1.5 sm:right-1.5
-                                w-3 h-3 sm:w-4 sm:h-4
-                                rounded-full bg-green-500
-                                ring-4 ring-black z-30"
-                            title="En ligne"
                         />
-
-                        <!-- Live badge: sur le wrapper (donc visible) -->
-                        <span
-                            v-if="isLive()"
-                            class="absolute -bottom-4 left-1/2 -translate-x-1/2
-                                bg-red-500 text-white
-                                px-2 py-0.5
-                                rounded-full
-                                text-xs sm:text-sm font-bold
-                                border border-red-300/60
-                                shadow-sm
-                                live-pulse z-20"
-                        >
-                            LIVE
-                        </span>
-                    </div>
-
-
-                                 <!-- Stats en haut à droite -->
-                    <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-10">
-                            <div class="flex items-center gap-3 sm:gap-4 text-white text-xs sm:text-sm md:text-base">
-                                <div class="flex items-center gap-1">
-                                    <svg class="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
-                                    </svg>
-                                    <span>{{ profile.photos_count }}</span>
-                                </div>
-                                <div class="flex items-center gap-1">
-                                    <svg class="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-                                    </svg>
-                                    <span>{{ profile.videos_count }}</span>
-                                </div>
-                                <div class="flex items-center gap-1">
-                                    <svg class="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
-                                    </svg>
-                                    <span>{{ profile.likes_count }}</span>
-                                </div>
-                            </div>
-                    </div>
-
-                    <!-- ✅ Contenu en dessous de l’avatar -->
-                    <div class="pt-14 sm:pt-16 md:pt-16">
-                        <div class="flex items-center gap-2 mb-1">
-                        <h1 class="text-xl sm:text-2xl md:text-3xl font-bold text-white">
-                            {{ profile.name }}
-                        </h1>
-
-   
-                    <!-- icon certification -->
-                    <img
-                        v-if="profile.certification_url"
-                        :src="profile.certification_url"
-                        :alt="profile.name"
-                        class="w-6 h-6 object-cover"
-                    />
-            
-                        <div v-if="isOnline()" class="text-sm text-white flex items-center gap-2">
-                            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
-                            En ligne
-                        </div>
-                    </div>
-
-                        <p class="text-xs sm:text-sm text-gray-300 mb-2 flex items-center gap-1">
-                        <!-- icon -->
-                         <svg class="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
-                        </svg>
-                        à proximité 12,4km
-                        </p>
-
-                        <p v-if="profile.biography" class="text-white font-bold mb-2 text-sm sm:text-base">
-                        {{ profile.biography }}
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Action Bar (original position) -->
-                <div
-                    ref="actionBarRef"
-                    class="relative bg-gray-900 border border-gray-800 rounded-lg mb-6
-                            flex items-start"
-                    >
-                    <!-- Avatar: top-left corner -->
-                    <div
-                    class="absolute -top-3 -left-2
-                        w-8 h-8 sm:w-10 sm:h-10
-                        rounded-full bg-gray-800 overflow-hidden"
-                    >
-                        <img
-                        v-if="profile.avatar_url"
-                        :src="profile.avatar_url"
-                        :alt="profile.name"
-                        class="w-full h-full object-cover"
-                        />
-                    </div>
-
-                    <!-- Content (space reserved for avatar) -->
-                    <p v-if="profile.description" class="text-white font-bold flex-1 text-sm sm:text-base pl-10 sm:pl-10 p-3 sm:p-4">
-                        {{ profile.description }}
-                    </p>
-                    <p v-else class="text-white font-bold flex-1 text-sm sm:text-base pl-10 sm:pl-10 p-3 sm:p-4">
-                        J'aime ceux qui osent. 💋
-                    </p>
-                </div>
-
-
-                <!-- Subscribe Button -->
-                <a
-                        id="ctaintro"
-                        @click="showRencontreModal = true"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="block w-full text-center
-                                bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                hover:from-pink-600 hover:via-rose-600 hover:to-orange-500
-                                text-white font-semibold
-                                py-3 px-6 rounded-lg mb-6
-                                transition-all duration-200
-                                shadow-md hover:shadow-lg hover:cursor-pointer
-                                text-sm sm:text-base"
-                        >
-                {{ profile.action_label || "S'abonner au VIP" }}
-                </a>
-
-                <!-- Tabs -->
-                <div class="flex items-center justify-between mb-6 border-b border-gray-800 pb-2">
-                    <!-- Tabs (style pill comme Display Mode Toggle) -->
-                    <div class="flex gap-1 bg-gray-900 rounded-lg p-1">
-                        <button
-                            @click="activeTab = 'tout'"
-                            :class="[
-                                'px-3 py-2 rounded font-medium transition-colors text-sm sm:text-base',
-                                activeTab === 'tout'
-                                ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white shadow-sm'
-                                : 'text-gray-400 hover:text-white'
-                            ]"
-                        >
-                            Tout
-                        </button>
-
-                        <button
-                            @click="activeTab = 'live'"
-                            class="relative px-3 py-2 rounded font-medium transition-colors text-sm sm:text-base"
-                            :class="activeTab === 'live'
-                                ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white shadow-sm'
-                                : hasLivePost && isLive() ? 'text-transparent bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 bg-clip-text font-semibold' : 'text-gray-400 hover:text-white'"
-                        >
-                            Live
-
-                            <!-- live dot (si live existe) -->
-                            <span
-                                v-if="hasLivePost && activeTab !== 'live' && isLive()"
-                                class="absolute top-1 right-0 h-2 w-2 rounded-full bg-red-600 animate-pulse"
-                            />
-                        </button>
-                            
-                        <button
-                            @click="activeTab = 'rencontre'"
-                            :class="[
-                                'px-3 py-2 rounded font-medium transition-colors text-sm sm:text-base',
-                                activeTab === 'rencontre'
-                                ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white shadow-sm'
-                                    : 'text-gray-400 hover:text-white'
-                            ]"
-                        >
-                            Rencontre
-                        </button>
-
-                    </div>
-
-                    <!-- Display Mode Toggle -->
-                    <div class="flex gap-1 bg-gray-900 rounded-lg p-1">
-                        <button 
-                            @click="displayMode = 'list'"
-                            :class="[
-                                'p-2 rounded transition-colors',
-                                displayMode === 'list' 
-                                    ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white shadow-sm'
-                                    : 'text-gray-400 hover:text-white'
-                            ]"
-                            title="Vue liste"
-                        >
-                            <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
-                            </svg>
-                        </button>
-                        <button 
-                            @click="displayMode = 'grid'"
-                            :class="[
-                                'p-2 rounded transition-colors',
-                                displayMode === 'grid' 
-                                    ? 'bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white shadow-sm'
-                                    : 'text-gray-400 hover:text-white'
-                            ]"
-                            title="Vue grille"
-                        >
-                            <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div v-if="activeTab === 'rencontre'" class="flex justify-center">
-                    <div class="w-full max-w-xl bg-transparent p-6 sm:p-8 text-center shadow-xl relative">
-
-
-                        <div class="flex flex-col items-center">
-                            <div class="relative">
-
-                                    <span
-                                    v-if="isLive() || isOnline()"
-                                    class="absolute -inset-[4px] rounded-full
-                                            bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                            pointer-events-none z-0"
-                                    aria-hidden="true"
-                                    />
-
-                                    <!-- Avatar -->
-                                    <div class="relative z-10 w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28
-                                            rounded-full border-4 border-black bg-gray-800 overflow-hidden">
-                                            <img
-                                            v-if="profile.avatar_url"
-                                            :src="profile.avatar_url"
-                                            :alt="profile.name"
-                                            class="w-full h-full object-cover"
-                                            />
-                                        <div v-else class="w-full h-full flex items-center justify-center text-gray-400">
-                                            <svg class="w-10 h-10 sm:w-12 sm:h-12" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-                                            </svg>
-                                        </div>
-                                    </div>
-
-                                    <!-- ✅ Online dot -->
-                                    <span
-                                        v-if="isOnline()"
-                                        class="absolute bottom-1 right-2 sm:bottom-1.5 sm:right-
-                                            w-2.5 h-2.5 sm:w-3.5 sm:h-3.5
-                                            rounded-full bg-green-500
-                                            ring-4 ring-black z-30"
-                                        title="En ligne"
-                                    />
-
-                                    <!-- Live badge: sur le wrapper (donc visible) -->
-                                    <span
-                                        v-if="isLive()"
-                                        class="absolute -bottom-4 left-1/2 -translate-x-1/2
-                                            bg-red-500 text-white
-                                            px-2 py-0.5
-                                            rounded-full
-                                            text-xs sm:text-sm font-bold
-                                            border border-red-300/60
-                                            shadow-sm
-                                            live-pulse z-20"
-                                    >
-                                        LIVE
-                                    </span>
-                            </div>
-
-                            <p class="mt-6 text-lg sm:text-xl font-semibold text-white">
-                                {{ profile.name }} t'a envoyé une invitation !
-                            </p>
-
-                            <div class="mt-6 w-full flex flex-col gap-3">
-                                <button
-                                    type="button"
-                                    @click="triggerConclusionCta"
-                                    class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 cursor-pointer
-                                        hover:from-pink-600 hover:via-rose-600 hover:to-orange-500
-                                        text-white font-semibold py-3 px-6 rounded-full
-                                        transition-all duration-200 shadow-md"
-                                >
-
-                                <!-- icon coeur -->
-                                <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
-                                </svg>
-                                    {{ profile.rencontre_primary_label || "Accepter l'invitation" }}
-                                </button>
-                                <button
-                                    type="button"
-                                    @click="triggerConclusionCta"
-                                    class="w-full flex items-center justify-center gap-2 bg-white hover:bg-gray-200 text-black font-semibold py-3 px-6 rounded-full cursor-pointer
-                                        border border-gray-800 hover:border-gray-700
-                                        transition-all duration-200 shadow-sm"
-                                    >
-                                    <!-- icon message -->
-                                    <svg class="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M21.0039 12C21.0039 16.9706 16.9745 21 12.0039 21C9.9675 21 3.00463 21 3.00463 21C3.00463 21 4.56382 17.2561 3.93982 16.0008C3.34076 14.7956 3.00391 13.4372 3.00391 12C3.00391 7.02944 7.03334 3 12.0039 3C16.9745 3 21.0039 7.02944 21.0039 12Z" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    </svg>
-                                    {{ profile.rencontre_secondary_label || "Découvrir le profil" }}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Posts Feed - List View -->
-                <div v-else-if="displayMode === 'list'" class="space-y-4 sm:space-y-6">
-                    <div 
-                        v-for="post in filteredPosts" 
-                        :key="post.id"
-                        class="bg-black border border-gray-800 rounded-lg p-4 sm:p-6"
-                    >
-                        <!-- Post Header -->
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="flex items-center gap-2 sm:gap-3">
-                                <div class="relative flex-shrink-0">
-                                    <!-- ✅ live ring en dégradé (derrière l’avatar) -->
-                                    <span
-                                    v-if="isLive() || isOnline()"
-                                    class="absolute -inset-[2px] rounded-full
-                                            bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                            animate-pulse z-0"
-                                    aria-hidden="true"
-                                    />
-
-                                    <!-- avatar -->
-                                    <div
-                                    class="relative z-10 w-8 h-8 sm:w-10 sm:h-10
-                                            rounded-full overflow-hidden bg-gray-800"
-                                    >
-                                        <img
-                                            v-if="profile.avatar_url"
-                                            :src="profile.avatar_url"
-                                            :alt="profile.name"
-                                            class="w-full h-full object-cover"
-                                        />
-                        
-                                    </div>
-                                </div>
-
-
-                                <div>
-                                    <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
-                                        <span class="font-semibold text-white text-sm sm:text-base">
-                                            {{ profile.name }}
-                                        </span>
-                                        <span
-                                            v-if="isLive() && post.type === 'live'"
-                                            class="inline-flex items-center px-2 py-0.5 rounded-full
-                                                    text-[10px] sm:text-xs font-bold
-                                                    bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                                    text-white ml-1 sm:ml-2
-                                                    animate-pulse"
-                                            >
-                                            LIVE
-                                            </span>
-
-                                        <span v-if="isOnline()" class="text-sm text-white flex items-center gap-1">
-                                            <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                                            En ligne
-                                </span>
-                                    </div>
-                                </div>
-                            </div>
-                            <span class="text-xs sm:text-sm text-gray-400 whitespace-nowrap ml-2">
-                                {{ formatDate(post.created_at) }}
-                            </span>
-                        </div>
-
-                        <!-- Post Content -->
-                        <p v-if="post.content" class="text-white mb-4 text-sm sm:text-base">
-                            {{ post.content }}
-                        </p>
-
-                        <!-- Post Media -->
-                        <div v-if="post.media && post.media.length > 0" class="mb-4">
-                            <div 
-                                v-for="(media, index) in post.media" 
-                                :key="index"
-                                class="relative rounded-lg overflow-hidden bg-gray-900 mb-2 select-none"
-                                @contextmenu.prevent
-                            >
-                                <!-- Image -->
-                                <img 
-                                    v-if="media.type.startsWith('image')"
-                                    :src="media.url"
-                                    :alt="`Media ${index + 1}`"
-                                    class="w-full h-auto object-cover pointer-events-none"
-                                    draggable="false"
-                                    oncontextmenu="return false;"
-                                />
-                                <div v-else class="aspect-video bg-gray-900 flex items-center justify-center">
-                                    <svg class="w-12 h-12 sm:w-16 sm:h-16 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                                    </svg>
-                                </div>
-                                
-                                <!-- LIVE Badge -->
-                                    <div
-                                    v-if="isLive() && post.type === 'live'"
-                                    class="absolute top-3 left-3 z-40
-                                            bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                            text-white px-3 py-1 rounded-full
-                                            text-xs sm:text-sm font-bold flex items-center gap-1.5
-                                            animate-pulse shadow-md"
-                                    >
-                                    <span class="w-2 h-2 bg-white rounded-full"></span>
-                                    LIVE
-                                    </div>
-
-
-                                <!-- Video duration (top-right) -->
-                                <div 
-                                    v-if="post.duration && (post.type === 'video' || post.type === 'live')"
-                                    class="absolute z-40 top-3 right-3 z-30 bg-black/70 text-white px-2 py-0.5 rounded text-xs sm:text-sm font-semibold"
-                                >
-                                    {{ post.duration }}
-                                </div>
-                                
-                                <!-- Overlay de protection (empêche le drag) -->
-                                <div 
-                                    class="absolute inset-0 z-10"
-                                    @contextmenu.prevent
-                                    @dragstart.prevent
-                                ></div>
-                                
-                                <!-- Lock Overlay avec photo de profil (uniquement si flouté) -->
-                                <button
-                                v-if="post.is_blurred"
-                                type="button"
-                                @click="() => { showRencontreModal = true; triggerDebloquerCta(); }"
-                                class="absolute inset-0 z-30
-                                        bg-black/35 backdrop-blur-md
-                                        flex items-center justify-center cursor-pointer"
-                                >
-                                <div class="text-center px-6">
-                                    <!-- Avatar + ring + lock badge -->
-                                    <div class="relative mx-auto w-20 h-20 sm:w-24 sm:h-24 rounded-full">
-                                        <!-- ring rouge -->
-                                        <span
-                                            v-if="isLive() || isOnline()"
-                                            class="absolute -inset-[4px] rounded-full
-                                                    bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                                    animate-pulse z-0"
-                                            aria-hidden="true"
-                                            />
-
-                                        <!-- avatar -->
-                                        <div class="relative z-10 w-full h-full rounded-full overflow-hidden bg-gray-800">
-                                            <img
-                                            v-if="profile.avatar_url"
-                                            :src="profile.avatar_url"
-                                            :alt="profile.name"
-                                            class="w-full h-full object-cover"
-                                            />
-                                            <div v-else class="w-full h-full flex items-center justify-center text-gray-300">
-                                            <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-                                            </svg>
-                                            </div>
-                                        </div>
-
-                                        <!-- lock badge (en bas à droite) -->
-                                        <div
-                                            class="absolute -bottom-2 -right-2
-                                                w-10 h-10 rounded-full bg-black
-                                                flex items-center justify-center
-                                                ring-4 ring-black z-10"
-                                        >
-                                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                            </svg>
-                                        </div>
-                                    </div>
-
-                                    <!-- Name + verified -->
-                                    <div class="mt-4 flex items-center justify-center gap-2">
-                                    <p class="text-white text-2xl sm:text-3xl font-extrabold tracking-tight">
-                                        {{ profile.name }}
-                                    </p>
-
-                                    <!-- icon certification -->
-                                    <img
-                                        v-if="profile.certification_url"
-                                        :src="profile.certification_url"
-                                        :alt="profile.name"
-                                        class="w-6 h-6 object-cover"
-                                    />
-
-                                    </div>
-
-                                    <!-- CTA button (dégradé pill) -->
-                                    <span
-                                    class="mt-6 px-10 py-3 rounded-full text-white font-bold text-lg
-                                        shadow-lg transition-all duration-200
-                                        bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                        hover:from-pink-600 hover:via-rose-600 hover:to-orange-500
-                                        inline-block"
-                                    >
-                                    {{ post.is_live && (post.type === 'video' || post.type === 'live') ? 'Accéder au live' : 'Débloquer' }}
-                                    </span>
-                                </div>
-                                </button>
-
-                            </div>
-                        </div>
-
-                        <!-- Post Footer -->
-                        <div class="flex items-center gap-4 text-gray-400">
-                            <button class="flex items-center gap-2 hover:text-[#8B0000] transition-colors">
-                                <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                    </svg>
-                                <span class="text-sm sm:text-base">{{ post.likes_count }}</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-
-                <!-- Posts Feed - Grid View -->
-                <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
-                    <div 
-                        v-for="post in filteredPosts" 
-                        :key="post.id"
-                        class="relative aspect-square rounded-lg overflow-hidden bg-gray-900 select-none group cursor-pointer"
-                        @contextmenu.prevent
-                    >
-                        <!-- First Media of Post -->
-                        <template v-if="post.media && post.media.length > 0">
-                            <img 
-                                v-if="post.media[0].type.startsWith('image')"
-                                :src="post.media[0].url"
-                                :alt="`Post ${post.id}`"
-                                class="w-full h-full object-cover pointer-events-none"
-                                draggable="false"
-                                oncontextmenu="return false;"
-                            />
-                            <div v-else class="w-full h-full bg-gray-900 flex items-center justify-center">
-                                <svg class="w-8 h-8 sm:w-12 sm:h-12 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                                </svg>
-                            </div>
-                        </template>
-                        
-                        <!-- LIVE Badge -->
-                        <div 
-                            v-if="post.is_live && (post.type === 'video' || post.type === 'live')"
-                            class="absolute top-2 left-2 z-30
-                                    bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                    text-white px-2 py-0.5 rounded
-                                    text-xs font-bold flex items-center gap-1
-                                    animate-pulse shadow-md"
-                            >
-                            <span class="w-1.5 h-1.5 bg-white rounded-full"></span>
-                            LIVE
-                        </div>
-
-
-                        <!-- Video duration (top-right) -->
-                        <div 
-                            v-if="post.duration && (post.type === 'video' || post.type === 'live')"
-                            class="absolute top-2 right-2 z-30 bg-black/70 text-white px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold flex items-center gap-1"
-                        >
-                            {{ post.duration }}
-                        </div>
-                        
-                        <!-- Multiple media indicator -->
-                        <div 
-                            v-if="post.media && post.media.length > 1"
-                            class="absolute top-2 right-2 z-30 bg-black/60 text-white px-2 py-0.5 rounded text-xs font-medium"
-                        >
-                            +{{ post.media.length - 1 }}
-                        </div>
-                        
-                        <!-- Overlay de protection -->
-                        <div 
-                            class="absolute inset-0 z-10"
-                            @contextmenu.prevent
-                            @dragstart.prevent
-                        ></div>
-                        
-                        <!-- Lock Overlay (uniquement si flouté) hover display svg lock -->
-                        <button 
-                            v-if="post.is_blurred"
-                            type="button"
-                            @click="() => { showRencontreModal = true; triggerDebloquerCta(); }"
-                            class="absolute inset-0 z-20 bg-black/40 flex flex-col items-center justify-center gap-2 cursor-pointer"
-                        >
-                            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
-                                <svg class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                </svg>
-                            </div>
-
-                            <span
-                                class="px-3 py-1 rounded-full text-white font-semibold text-xs sm:text-sm
-                                    shadow-lg transition-all duration-200
-                                    bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                    hover:from-pink-600 hover:via-rose-600 hover:to-orange-500
-                                    inline-block"
-                            >
-                                {{ post.is_live && (post.type === 'video' || post.type === 'live') ? 'Accéder au live' : 'Débloquer' }}
-                            </span>
-                        </button>
-
-                        
-                        <!-- Hover overlay with likes -->
-                        <button
-                            v-if="post.is_blurred"
-                            type="button"
-                            @click="triggerConclusionCta"
-                            class="absolute inset-0 z-25 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 hover:cursor-pointer"
-                        >
-                            <div class="flex items-center gap-2 text-white">
-                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
-                                </svg>
-                                <span class="font-semibold">{{ post.likes_count }}</span>
-                            </div>
-                           
-                        </button>
-                        <div
+                        <svg
                             v-else
-                            class="absolute inset-0 z-25 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                            class="mv-avatar-ph"
                         >
-                            <div class="flex items-center gap-2 text-white">
-                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
-                                </svg>
-                                <span class="font-semibold">{{ post.likes_count }}</span>
-                            </div>
-                        </div>
+                            <path
+                                fill-rule="evenodd"
+                                d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                                clip-rule="evenodd"
+                            />
+                        </svg>
                     </div>
+                    <span
+                        v-if="isOnline()"
+                        class="mv-online"
+                        title="En ligne"
+                    ></span>
+                    <span v-if="isLive()" class="mv-livebadge">LIVE</span>
                 </div>
 
-                <!-- Empty State -->
-                <div v-if="activeTab !== 'rencontre' && filteredPosts.length === 0" class="text-center py-12">
-                    <p class="text-gray-400">
-                        Aucune publication pour le moment.
-                    </p>
+                <div class="mv-head-actions">
+                    <button
+                        type="button"
+                        class="mv-btn-ghost"
+                        aria-label="Ajouter aux favoris"
+                        title="Ajouter aux favoris"
+                        @click="openOffer"
+                    >
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path
+                                d="M12 21s-7.5-4.6-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2 4.4-9.5 9-9.5 9Z"
+                            />
+                        </svg>
+                    </button>
+                    <button type="button" class="mv-btn-msg" @click="openOffer">
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path
+                                d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"
+                            />
+                        </svg>
+                        M'écrire
+                    </button>
                 </div>
             </div>
+
+            <h1 class="mv-name">
+                {{ profile.name }}
+                <img
+                    v-if="profile.certification_url"
+                    :src="profile.certification_url"
+                    alt="Profil vérifié"
+                    class="mv-cert"
+                />
+                <span v-else class="mv-verified" title="Profil vérifié">
+                    <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#fff"
+                        stroke-width="3.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path d="m5 12 5 5L20 7" />
+                    </svg>
+                </span>
+            </h1>
+            <div class="mv-handle">{{ handle }}</div>
+
+            <div class="mv-stats">
+                <span>
+                    <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <circle cx="9" cy="9" r="2" />
+                        <path d="m21 15-5-5L5 21" />
+                    </svg>
+                    <b>{{ profile.photos_count }}</b> Photos
+                </span>
+                <span>
+                    <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <rect x="2" y="6" width="14" height="12" rx="2" />
+                        <path d="m22 8-6 4 6 4V8Z" />
+                    </svg>
+                    <b>{{ profile.videos_count }}</b> Vidéos
+                </span>
+                <span>
+                    <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                    >
+                        <path
+                            d="M12 21s-7.5-4.6-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2 4.4-9.5 9-9.5 9Z"
+                        />
+                    </svg>
+                    <b>{{ profile.likes_count }}</b> Likes
+                </span>
+            </div>
+
+            <p v-if="profile.biography" class="mv-bio">
+                {{ profile.biography }}
+            </p>
+
+            <!-- Onglets -->
+            <div ref="stickyAnchorRef" class="mv-tabs" role="tablist">
+                <button
+                    role="tab"
+                    :aria-selected="activeTab === 'posts'"
+                    @click="activeTab = 'posts'"
+                >
+                    <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                    >
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+                    </svg>
+                    Posts
+                </button>
+                <button
+                    role="tab"
+                    :aria-selected="activeTab === 'live'"
+                    @click="activeTab = 'live'"
+                >
+                    <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <rect x="2" y="6" width="14" height="12" rx="2" />
+                        <path d="m22 8-6 4 6 4V8Z" />
+                    </svg>
+                    Live
+                    <i v-if="hasLivePost && isLive()" class="mv-reddot"></i>
+                </button>
+                <button
+                    role="tab"
+                    :aria-selected="activeTab === 'rencontre'"
+                    @click="activeTab = 'rencontre'"
+                >
+                    <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path
+                            d="M12 21s-7.5-4.6-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2 4.4-9.5 9-9.5 9Z"
+                        />
+                    </svg>
+                    Rencontre
+                </button>
+            </div>
+
+            <!-- Rencontre -->
+            <div v-if="activeTab === 'rencontre'" class="mv-meet">
+                <div class="mv-avatar mv-avatar-center">
+                    <div class="mv-avatar-in">
+                        <img
+                            v-if="profile.avatar_url"
+                            :src="profile.avatar_url"
+                            :alt="profile.name"
+                        />
+                    </div>
+                    <span v-if="isOnline()" class="mv-online"></span>
+                    <span v-if="isLive()" class="mv-livebadge">LIVE</span>
+                </div>
+                <h3>{{ profile.name }} t'a envoyé une invitation</h3>
+                <p>Elle est disponible pour discuter maintenant.</p>
+                <button
+                    type="button"
+                    class="mv-cta mv-cta-pill"
+                    @click="openOffer"
+                >
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                    >
+                        <path
+                            d="M12 21s-7.5-4.6-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2 4.4-9.5 9-9.5 9Z"
+                        />
+                    </svg>
+                    {{
+                        profile.rencontre_primary_label ||
+                        "Accepter l'invitation"
+                    }}
+                </button>
+                <button type="button" class="mv-alt" @click="openOffer">
+                    {{
+                        profile.rencontre_secondary_label ||
+                        'Découvrir le profil'
+                    }}
+                </button>
+            </div>
+
+            <!-- Grille Posts / Live -->
+            <div v-else class="mv-grid">
+                <button
+                    v-for="post in visiblePosts"
+                    :key="post.id"
+                    type="button"
+                    class="mv-tile"
+                    :class="{ 'is-blur': post.is_blurred }"
+                    @contextmenu.prevent
+                    @click="openOffer"
+                >
+                    <template v-if="post.media && post.media.length > 0">
+                        <img
+                            v-if="post.media[0].type.startsWith('image')"
+                            :src="post.media[0].url"
+                            :alt="`Post ${post.id}`"
+                            class="mv-tile-img"
+                            draggable="false"
+                        />
+                        <div v-else class="mv-tile-video">
+                            <svg
+                                width="40"
+                                height="40"
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                            >
+                                <path
+                                    d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"
+                                />
+                            </svg>
+                        </div>
+                    </template>
+                    <div v-else class="mv-tile-video"></div>
+
+                    <span
+                        v-if="
+                            post.is_live &&
+                            (post.type === 'live' || post.type === 'video')
+                        "
+                        class="mv-tile-live"
+                    >
+                        <i></i>LIVE
+                    </span>
+                    <span
+                        v-if="
+                            post.duration &&
+                            (post.type === 'video' || post.type === 'live')
+                        "
+                        class="mv-tile-dur"
+                    >
+                        {{ post.duration }}
+                    </span>
+                    <span
+                        v-if="post.media && post.media.length > 1"
+                        class="mv-tile-more"
+                    >
+                        +{{ post.media.length - 1 }}
+                    </span>
+
+                    <span v-if="post.is_blurred" class="mv-tile-lock">
+                        <i>
+                            <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <rect
+                                    x="4"
+                                    y="11"
+                                    width="16"
+                                    height="10"
+                                    rx="2"
+                                />
+                                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                            </svg>
+                        </i>
+                        <em>
+                            {{
+                                post.is_live
+                                    ? 'Accéder au live'
+                                    : post.type === 'live'
+                                      ? 'Replay'
+                                      : 'Débloquer'
+                            }}
+                        </em>
+                    </span>
+
+                    <span class="mv-tile-likes">
+                        <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                        >
+                            <path
+                                d="M12 21s-7.5-4.6-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2 4.4-9.5 9-9.5 9Z"
+                            />
+                        </svg>
+                        {{ post.likes_count }}
+                    </span>
+                </button>
+
+                <div v-if="visiblePosts.length === 0" class="mv-empty">
+                    Aucune publication pour le moment.
+                </div>
+            </div>
+
+            <div class="mv-more">
+                <button type="button" @click="openOffer">Voir plus</button>
+            </div>
+
+            <!-- Offre -->
+            <section class="mv-offer" aria-label="Offre d'essai">
+                <h3>Mon VIP · offre d'essai</h3>
+                <div>
+                    <div class="mv-price">
+                        <small>€</small><span>{{ OFFER.price }}</span>
+                    </div>
+                </div>
+                <div class="mv-per">
+                    {{ OFFER.per }}, <em>{{ OFFER.perDay }}</em>
+                </div>
+                <div class="mv-was">{{ OFFER.was }}</div>
+                <ul class="mv-feat">
+                    <li v-for="f in OFFER.features" :key="f">
+                        <i>
+                            <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="m5 12 5 5L20 7" />
+                            </svg>
+                        </i>
+                        {{ f }}
+                    </li>
+                </ul>
+                <!-- #ctaintro : repère utilisé par le script Prelinker -->
+                <a
+                    id="ctaintro"
+                    class="mv-cta"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click="showRencontreModal = true"
+                >
+                    {{ profile.action_label || "S'abonner au VIP" }}
+                </a>
+                <div class="mv-safe">
+                    <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <rect x="4" y="11" width="16" height="10" rx="2" />
+                        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                    Rien n'apparaît sur ton relevé · résiliable en 1 clic
+                </div>
+            </section>
+
+            <div class="mv-foot">
+                Plateforme sécurisée • Paiement protégé • Support 24/7
+            </div>
         </div>
-        
-        <!-- Modal Rencontre -->
+
+        <!-- Popup abonnement (contenu injecté par Prelinker dans #selector) -->
         <Transition
             enter-active-class="transition-opacity duration-200 ease-out"
             enter-from-class="opacity-0"
@@ -927,149 +652,875 @@ onUnmounted(() => {
             leave-from-class="opacity-100"
             leave-to-class="opacity-0"
         >
-            <div
-                v-show="showRencontreModal"
-                :key="key"
-                class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm"
-            >
-                <div class="relative w-full h-full flex items-center justify-center p-4">
-                    <div class="relative w-full max-w-lg bg-black rounded-2xl border border-gray-800 shadow-2xl p-6 sm:p-8">
-                        <button
-                            type="button"
-                            class="absolute top-3 right-3 text-gray-400 hover:text-white transition-colors"
-                            aria-label="Fermer"
-                            @click="showRencontreModal = false"
+            <div v-show="showRencontreModal" :key="key" class="mv-modal">
+                <div
+                    class="mv-box"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="mv-modal-title"
+                >
+                    <button
+                        type="button"
+                        class="mv-x"
+                        aria-label="Fermer"
+                        @click="showRencontreModal = false"
+                    >
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.5"
+                            stroke-linecap="round"
                         >
-                            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
+                            <path d="M6 6l12 12M18 6 6 18" />
+                        </svg>
+                    </button>
 
-                        <div class="flex flex-col items-center text-center">
-                            <div class="w-16 h-16 mb-8 rounded-full bg-gray-900 border border-gray-800 flex items-center justify-center mb-4 overflow-hidden">
-                                <img
-                                    v-if="profile.avatar_url"
-                                    :src="profile.avatar_url"
-                                    :alt="profile.name"
-                                    class="w-full h-full object-cover"
-                                />
-                                <div v-else class="w-full h-full flex items-center justify-center text-gray-500">
-                                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                            </div>
-
-                            <!-- <p class="text-white font-semibold text-lg sm:text-xl mb-4">MyPrivate</p> -->
-
-                            <div class="grid grid-cols-3 gap-2 w-full mb-5">
-                                <button class="bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white rounded-lg py-2 text-xs sm:text-sm font-semibold">
-                                    Nudes et vidéos
-                                </button>
-                                <button class="bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white rounded-lg py-2 text-xs sm:text-sm font-semibold">
-                                    Chat illimité
-                                </button>
-                                <button class="bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white rounded-lg py-2 text-xs sm:text-sm font-semibold">
-                                    Rencontres
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="space-y-6" id="selector"></div>
+                    <div class="mv-box-avatar">
+                        <img
+                            v-if="profile.avatar_url"
+                            :src="profile.avatar_url"
+                            :alt="profile.name"
+                        />
                     </div>
+                    <h2 id="mv-modal-title">Rejoins mon VIP 😍</h2>
+                    <div class="mv-box-sub">
+                        {{ profile.name }} t'attend de l'autre côté
+                    </div>
+
+                    <div class="mv-perks">
+                        <span><em>🔥</em>Nudes &amp; vidéos</span>
+                        <span><em>💬</em>Chat illimité</span>
+                        <span><em>📍</em>Rencontres</span>
+                    </div>
+
+                    <div id="selector" class="mv-selector"></div>
                 </div>
             </div>
         </Transition>
 
-
-        <!-- Sticky Action Bar (appears when scrolling down) -->
+        <!-- Barre flottante -->
         <Transition
             enter-active-class="transition-transform duration-300 ease-out"
-            enter-from-class="translate-y-full"
+            enter-from-class="translate-y-[130%]"
             enter-to-class="translate-y-0"
             leave-active-class="transition-transform duration-300 ease-in"
             leave-from-class="translate-y-0"
-            leave-to-class="translate-y-full"
+            leave-to-class="translate-y-[130%]"
         >
-                <div 
-                    v-if="showStickyBar"
-                    class="fixed bottom-4 left-1/2 -translate-x-1/2
-                        w-[calc(100%-2rem)] md:w-6/12
-                        z-50
-                        bg-gray-900/95 backdrop-blur-sm
-                        border border-gray-800
-                        rounded-xl
-                        p-3 sm:p-4
-                        shadow-lg"
-                >
-
-                <div class="max-w-6xl mx-auto flex items-center gap-3">
-                    <div
-                        class="w-10 h-10 sm:w-12 sm:h-12 rounded-full
-                                bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                p-[2px] flex-shrink-0"
-                        >
-                            <div class="w-full h-full rounded-full bg-gray-800 overflow-hidden">
-                                <img 
-                                v-if="profile.avatar_url"
-                                :src="profile.avatar_url"
-                                :alt="profile.name"
-                                class="w-full h-full object-cover"
-                                />
-                            </div>
-                        </div>
-
-                    <div class="flex-1 min-w-0">
-                        <p class="text-white font-medium text-sm sm:text-base truncate">
-                            {{ profile.name }}
-                        </p>
-                        <p v-if="profile.description" class="text-gray-400 text-xs sm:text-sm truncate">
-                            {{ profile.description }}
-                        </p>
-                        <p v-else class="text-gray-400 text-xs sm:text-sm truncate">
-                            J'aime ceux qui osent. 💋
-                        </p>
-                    </div>
-
-                    <button  
-                        type="button"
-                        @click="triggerConclusionCta"
-                        class="bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400
-                                hover:from-pink-600 hover:via-rose-600 hover:to-orange-500
-                                text-white font-semibold
-                                py-2 px-4 sm:py-2.5 sm:px-6
-                                rounded-full
-                                transition-all duration-200
-                                shadow-md hover:shadow-lg hover:cursor-pointer
-                                text-sm sm:text-base whitespace-nowrap"
-                        >
-                        {{ profile.action_label || "S'abonner au VIP" }}
-                        </button>
-
+            <div v-if="showStickyBar" class="mv-sticky">
+                <div class="mv-sticky-avatar">
+                    <img
+                        v-if="profile.avatar_url"
+                        :src="profile.avatar_url"
+                        :alt="profile.name"
+                    />
                 </div>
-        </div>
+                <div class="mv-sticky-text">
+                    <b>{{ profile.name }}</b>
+                    <span>{{ profile.description || profile.biography }}</span>
+                </div>
+                <button type="button" class="mv-sticky-go" @click="openOffer">
+                    {{ profile.action_label || "S'abonner au VIP" }}
+                </button>
+            </div>
         </Transition>
     </div>
 </template>
 
 <style scoped>
-@keyframes softBlink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+.mv {
+    --mv-bg: #141216;
+    --mv-card: #1f1b22;
+    --mv-card2: #26212a;
+    --mv-line: #3a323f;
+    --mv-text: #f1ecf0;
+    --mv-muted: #a69ea8;
+    --mv-pink: #ec4899;
+    --mv-rose: #f43f5e;
+    --mv-grad: linear-gradient(90deg, #ec4899 0%, #f43f5e 50%, #fb923c 100%);
+    --mv-glow: 0 10px 30px rgba(244, 63, 94, 0.28);
+    background: var(--mv-bg);
+    color: var(--mv-text);
+    font-family:
+        'Plus Jakarta Sans',
+        system-ui,
+        -apple-system,
+        'Segoe UI',
+        sans-serif;
+    position: relative;
+    overflow-x: clip;
+}
+.mv button {
+    font: inherit;
+    cursor: pointer;
+}
+.mv svg {
+    display: block;
+    flex: none;
 }
 
-@keyframes livePulse {
-  0%, 100% {
+/* Bannière */
+.mv-banner {
+    position: relative;
+    height: 210px;
+    overflow: hidden;
+    background-color: #2a2230;
+    background-size: cover;
+    background-position: center;
+}
+.mv-banner-fade {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        to bottom,
+        rgba(20, 18, 22, 0) 35%,
+        var(--mv-bg) 100%
+    );
+}
+.mv-logo {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    padding: 6px 10px;
+}
+.mv-logo img {
+    height: 44px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+.mv-halo {
+    position: absolute;
+    left: 50%;
+    top: 170px;
+    width: 520px;
+    height: 220px;
+    transform: translateX(-50%);
+    background: radial-gradient(
+        closest-side,
+        rgba(236, 72, 153, 0.22),
+        transparent
+    );
+    pointer-events: none;
+    filter: blur(20px);
+}
+
+/* Profil */
+.mv-wrap {
+    max-width: 752px;
+    margin: 0 auto;
+    padding: 0 16px 110px;
+    position: relative;
+}
+.mv-head {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-top: -48px;
+}
+.mv-avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 999px;
+    padding: 3px;
+    background: var(--mv-grad);
+    position: relative;
+    flex: none;
+}
+.mv-avatar-center {
+    margin: 0 auto;
+}
+.mv-avatar-in {
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    border: 3px solid var(--mv-bg);
+    background: #3a3040;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    color: #8a7f8c;
+}
+.mv-avatar-in img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.mv-avatar-ph {
+    width: 44px;
+    height: 44px;
+}
+.mv-online {
+    position: absolute;
+    right: 4px;
+    bottom: 6px;
+    width: 15px;
+    height: 15px;
+    border-radius: 999px;
+    background: #22c55e;
+    border: 3px solid var(--mv-bg);
+    z-index: 2;
+}
+.mv-livebadge {
+    position: absolute;
+    left: 50%;
+    bottom: -9px;
+    transform: translateX(-50%);
+    z-index: 3;
+    background: #ef4444;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 2px solid var(--mv-bg);
+    line-height: 1.5;
+}
+.mv-head-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 58px;
+}
+.mv-btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    border: 1px solid var(--mv-line);
+    background: var(--mv-card);
+    color: var(--mv-text);
+}
+.mv-btn-msg {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 999px;
+    border: 0;
+    background: var(--mv-grad);
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    box-shadow: var(--mv-glow);
+}
+.mv-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 0;
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+.mv-cert {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+.mv-verified {
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--mv-grad);
+    display: grid;
+    place-items: center;
+}
+.mv-handle {
+    color: var(--mv-muted);
+    font-size: 14px;
+}
+.mv-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin-top: 10px;
+    font-size: 13.5px;
+    color: var(--mv-muted);
+}
+.mv-stats span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.mv-stats b {
+    color: var(--mv-text);
+    font-weight: 700;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+}
+.mv-stats svg {
+    color: var(--mv-pink);
+}
+.mv-bio {
+    margin: 14px 0 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+/* Onglets */
+.mv-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 24px;
+    border-bottom: 1px solid var(--mv-line);
+}
+.mv-tabs button {
+    position: relative;
+    background: none;
+    border: 0;
+    padding: 12px 8px;
+    color: var(--mv-muted);
+    font-weight: 600;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.mv-tabs button::after {
+    content: '';
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    bottom: -1px;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: var(--mv-grad);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.mv-tabs button[aria-selected='true'] {
+    color: var(--mv-text);
+}
+.mv-tabs button[aria-selected='true']::after {
     opacity: 1;
-  }
-  50% {
-    opacity: 0.65;
-  }
+}
+.mv-reddot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #ef4444;
+    animation: mv-pulse 1.4s infinite;
+}
+@keyframes mv-pulse {
+    50% {
+        opacity: 0.6;
+    }
 }
 
-.live-pulse {
-  animation: livePulse 1.6s ease-in-out infinite;
+/* Grille */
+.mv-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 16px;
+}
+.mv-tile {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    background: #2a242e;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid var(--mv-line);
+    padding: 0;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.mv-tile-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+}
+.mv-tile.is-blur .mv-tile-img {
+    filter: blur(18px) saturate(1.1);
+    transform: scale(1.2);
+}
+.mv-tile.is-blur::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 8, 12, 0.25);
+}
+.mv-tile-video {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(160deg, #3b2e3f, #1f1a24);
+    color: rgba(255, 255, 255, 0.8);
+}
+.mv-tile-lock {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 2;
+}
+.mv-tile-lock i {
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    display: grid;
+    place-items: center;
+    backdrop-filter: blur(4px);
+}
+.mv-tile-lock em {
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--mv-grad);
+}
+.mv-tile-dur {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    background: rgba(0, 0, 0, 0.65);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-variant-numeric: tabular-nums;
+}
+.mv-tile-more {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    background: rgba(0, 0, 0, 0.6);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.mv-tile-dur + .mv-tile-more {
+    top: 32px;
+}
+.mv-tile-live {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    background: #ef4444;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.mv-tile-live i {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #fff;
+    animation: mv-pulse 1.4s ease-in-out infinite;
+}
+.mv-tile-likes {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.mv-tile-likes svg {
+    color: var(--mv-rose);
+}
+.mv-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px 0;
+    color: var(--mv-muted);
+}
+
+.mv-more {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 24px 0 28px;
+}
+.mv-more::before,
+.mv-more::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(
+        to right,
+        transparent,
+        var(--mv-line),
+        transparent
+    );
+}
+.mv-more button {
+    background: var(--mv-card);
+    border: 1px solid var(--mv-line);
+    color: var(--mv-text);
+    border-radius: 999px;
+    padding: 8px 22px;
+    font-weight: 600;
+    font-size: 14px;
+}
+.mv-more button:hover {
+    border-color: var(--mv-pink);
+}
+
+/* Rencontre */
+.mv-meet {
+    text-align: center;
+    padding: 28px 12px 8px;
+}
+.mv-meet h3 {
+    margin: 22px 0 4px;
+    font-size: 20px;
+    font-weight: 800;
+}
+.mv-meet p {
+    margin: 0 0 18px;
+    color: var(--mv-muted);
+    font-size: 14px;
+}
+.mv-meet .mv-cta {
+    max-width: 360px;
+    margin: 0 auto 10px;
+}
+.mv-alt {
+    display: block;
+    max-width: 360px;
+    margin: 0 auto;
+    padding: 14px;
+    border-radius: 999px;
+    background: #fff;
+    color: #111;
+    font-weight: 700;
+    border: 0;
+    width: 100%;
+}
+
+/* Offre */
+.mv-offer {
+    position: relative;
+    max-width: 340px;
+    margin: 0 auto;
+    background: var(--mv-card);
+    border: 1px solid var(--mv-line);
+    border-radius: 18px;
+    padding: 24px 20px 20px;
+    text-align: center;
+    overflow: hidden;
+}
+.mv-offer::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: var(--mv-grad);
+}
+.mv-offer h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--mv-muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+.mv-price {
+    margin: 16px 0 4px;
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 2px;
+}
+.mv-price span {
+    background: var(--mv-grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+.mv-price small {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--mv-pink);
+    margin-top: 8px;
+}
+.mv-per {
+    font-size: 14px;
+    color: var(--mv-muted);
+}
+.mv-per em {
+    font-style: normal;
+    color: var(--mv-text);
+    font-weight: 600;
+}
+.mv-was {
+    font-size: 12px;
+    color: var(--mv-muted);
+    text-decoration: line-through;
+    margin-top: 4px;
+}
+.mv-feat {
+    list-style: none;
+    margin: 18px 0 0;
+    padding: 0;
+    text-align: left;
+    display: grid;
+    gap: 10px;
+    font-size: 14.5px;
+}
+.mv-feat li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+.mv-feat i {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: rgba(236, 72, 153, 0.15);
+    color: var(--mv-pink);
+    display: grid;
+    place-items: center;
+    margin-top: 1px;
+}
+.mv-cta {
+    margin-top: 22px;
+    width: 100%;
+    border: 0;
+    border-radius: 14px;
+    padding: 16px;
+    background: var(--mv-grad);
+    color: #fff;
+    font-weight: 800;
+    font-size: 17px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: var(--mv-glow);
+    cursor: pointer;
+}
+.mv-cta-pill {
+    border-radius: 999px;
+}
+.mv-safe {
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--mv-muted);
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    align-items: center;
+}
+.mv-foot {
+    margin: 40px 0 0;
+    text-align: center;
+    font-size: 12px;
+    color: var(--mv-muted);
+}
+
+/* Popup */
+.mv-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(8, 6, 10, 0.7);
+    backdrop-filter: blur(8px);
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    overflow-y: auto;
+}
+.mv-box {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    background: var(--mv-card);
+    border: 1px solid var(--mv-line);
+    border-radius: 22px;
+    padding: 34px 24px 26px;
+    text-align: center;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+.mv-x {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 0;
+    background: var(--mv-card2);
+    color: #ddd;
+    display: grid;
+    place-items: center;
+}
+.mv-box-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 999px;
+    margin: 0 auto 12px;
+    background: #3a3040;
+    box-shadow: 0 0 0 3px var(--mv-pink);
+    overflow: hidden;
+}
+.mv-box-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.mv-box h2 {
+    margin: 0 0 4px;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+.mv-box-sub {
+    color: var(--mv-muted);
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+.mv-perks {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 18px;
+}
+.mv-perks span {
+    padding: 9px 6px;
+    border-radius: 12px;
+    background: var(--mv-card2);
+    border: 1px solid var(--mv-line);
+    font-size: 12px;
+    font-weight: 600;
+}
+.mv-perks span em {
+    display: block;
+    font-style: normal;
+    font-size: 18px;
+    margin-bottom: 2px;
+}
+.mv-selector {
+    text-align: left;
+}
+
+/* Barre flottante */
+.mv-sticky {
+    position: fixed;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    width: min(calc(100% - 24px), 560px);
+    z-index: 50;
+    background: rgba(31, 27, 34, 0.92);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--mv-line);
+    border-radius: 999px;
+    padding: 8px 8px 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.mv-sticky-avatar {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    background: #3a3040;
+    border: 2px solid var(--mv-pink);
+    overflow: hidden;
+}
+.mv-sticky-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.mv-sticky-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.3;
+}
+.mv-sticky-text b {
+    display: block;
+    font-size: 14px;
+}
+.mv-sticky-text span {
+    color: var(--mv-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+.mv-sticky-go {
+    flex: none;
+    border: 0;
+    border-radius: 999px;
+    padding: 10px 16px;
+    background: var(--mv-grad);
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mv-reddot,
+    .mv-tile-live i {
+        animation: none;
+    }
+}
+@media (max-width: 520px) {
+    .mv-banner {
+        height: 160px;
+    }
+    .mv-halo {
+        top: 120px;
+    }
+    .mv-price {
+        font-size: 48px;
+    }
+    .mv-grid {
+        gap: 6px;
+    }
+    .mv-tabs button {
+        font-size: 14px;
+        gap: 6px;
+    }
+    .mv-sticky-go {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
 }
 </style>
-
-    
