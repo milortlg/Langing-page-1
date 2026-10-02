@@ -51,22 +51,27 @@ const props = defineProps<{
  * ton offre change.
  * ------------------------------------------------------------------ */
 const OFFER = {
+    // Nom du service vers lequel renvoie le bouton (affiché dans la popup)
+    service: 'FansLink',
     price: '1.04',
+    oldPrice: '28.93',
     per: 'par semaine',
     perDay: 'soit 0.15 € / jour',
     was: 'au lieu de 28.93 € pour 2 semaines',
+    // À COMPLÉTER : prix appliqué après l'essai (ex. « puis 28,93 € toutes les 2 semaines »)
+    renewal: 'puis 28,93 € toutes les 2 semaines, sans engagement',
     features: [
-        'Toutes mes photos & vidéos, sans flou',
-        'Messagerie privée avec moi, illimitée',
-        'Mes lives & appels vidéo en direct',
-        'Accès aux profils premium & rencontres',
-        'Paiement sécurisé, 100 % discret',
+        'Accès complet aux profils premium',
+        'Messages privés illimités',
+        'Contenu exclusif en avant-première',
+        'Accès au site de rencontre',
     ],
 };
 
 const key = ref(0);
 const activeTab = ref<'posts' | 'live' | 'rencontre'>('posts');
 const showStickyBar = ref(false);
+const showPremium = ref(false);
 const showRencontreModal = ref(false);
 const stickyAnchorRef = ref<HTMLElement | null>(null);
 
@@ -123,6 +128,15 @@ const openOffer = async () => {
     triggerDebloquerCta();
 };
 
+const goPremium = async () => {
+    showPremium.value = false;
+    await openOffer();
+};
+
+const onKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') showPremium.value = false;
+};
+
 const handleScroll = () => {
     if (stickyAnchorRef.value) {
         const rect = stickyAnchorRef.value.getBoundingClientRect();
@@ -154,6 +168,7 @@ function loadExternalScript(src: string): Promise<void> {
 
 onMounted(async () => {
     window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('keydown', onKeydown);
 
     if (props.profile.script_url) {
         try {
@@ -171,6 +186,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
     window.removeEventListener('scroll', handleScroll);
+    window.removeEventListener('keydown', onKeydown);
     if (ptScriptEl?.parentNode) {
         ptScriptEl.parentNode.removeChild(ptScriptEl);
         ptScriptEl = null;
@@ -634,7 +650,7 @@ onUnmounted(() => {
                         <rect x="4" y="11" width="16" height="10" rx="2" />
                         <path d="M8 11V7a4 4 0 0 1 8 0v4" />
                     </svg>
-                    Rien n'apparaît sur ton relevé · résiliable en 1 clic
+                    Paiement sécurisé · {{ OFFER.renewal }}
                 </div>
             </section>
 
@@ -701,30 +717,83 @@ onUnmounted(() => {
             </div>
         </Transition>
 
-        <!-- Barre flottante -->
+        <!-- Bouton flottant « Accès premium » -->
         <Transition
-            enter-active-class="transition-transform duration-300 ease-out"
-            enter-from-class="translate-y-[130%]"
-            enter-to-class="translate-y-0"
-            leave-active-class="transition-transform duration-300 ease-in"
-            leave-from-class="translate-y-0"
-            leave-to-class="translate-y-[130%]"
+            enter-active-class="transition duration-300 ease-out"
+            enter-from-class="translate-y-[130%] opacity-0"
+            enter-to-class="translate-y-0 opacity-100"
         >
-            <div v-if="showStickyBar" class="mv-sticky">
-                <div class="mv-sticky-avatar">
-                    <img
-                        v-if="profile.avatar_url"
-                        :src="profile.avatar_url"
-                        :alt="profile.name"
-                    />
+            <button
+                v-if="!showPremium && !showRencontreModal"
+                type="button"
+                class="mv-premium-btn"
+                @click="showPremium = true"
+            >
+                Accès premium · {{ OFFER.price.replace('.', ',') }} €
+            </button>
+        </Transition>
+
+        <!-- Popup des services de l'offre -->
+        <Transition
+            enter-active-class="transition-opacity duration-200 ease-out"
+            enter-from-class="opacity-0"
+            enter-to-class="opacity-100"
+            leave-active-class="transition-opacity duration-150 ease-in"
+            leave-from-class="opacity-100"
+            leave-to-class="opacity-0"
+        >
+            <div
+                v-if="showPremium"
+                class="mv-modal mv-premium"
+                @click.self="showPremium = false"
+            >
+                <div
+                    class="mv-premium-box"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="mv-premium-title"
+                >
+                    <button
+                        type="button"
+                        class="mv-x"
+                        aria-label="Fermer"
+                        @click="showPremium = false"
+                    >
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.5"
+                            stroke-linecap="round"
+                        >
+                            <path d="M6 6l12 12M18 6 6 18" />
+                        </svg>
+                    </button>
+                    <span class="mv-premium-tag">Profils exclusifs</span>
+                    <h2 id="mv-premium-title">Rejoins {{ OFFER.service }}</h2>
+                    <span class="mv-premium-trial">Offre d'essai</span>
+                    <div class="mv-premium-price">
+                        <s>{{ OFFER.oldPrice.replace('.', ',') }} €</s>
+                        <b>{{ OFFER.price.replace('.', ',') }} €</b>
+                    </div>
+                    <p class="mv-premium-renew">{{ OFFER.renewal }}</p>
+                    <ul class="mv-premium-list">
+                        <li v-for="f in OFFER.features" :key="f">{{ f }}</li>
+                    </ul>
+                    <button
+                        type="button"
+                        class="mv-premium-go"
+                        @click="goPremium"
+                    >
+                        Profiter de l'offre
+                    </button>
+                    <p class="mv-premium-legal">
+                        Service proposé par {{ OFFER.service }}. Prix et
+                        conditions confirmés avant tout paiement.
+                    </p>
                 </div>
-                <div class="mv-sticky-text">
-                    <b>{{ profile.name }}</b>
-                    <span>{{ profile.description || profile.biography }}</span>
-                </div>
-                <button type="button" class="mv-sticky-go" @click="openOffer">
-                    {{ profile.action_label || "S'abonner au VIP" }}
-                </button>
             </div>
         </Transition>
     </div>
@@ -1522,5 +1591,156 @@ onUnmounted(() => {
         padding: 10px 12px;
         font-size: 13px;
     }
+}
+
+.mv-foot {
+    padding-bottom: 100px;
+}
+
+/* Bouton flottant Accès premium */
+.mv-premium-btn {
+    position: fixed;
+    left: 50%;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 40;
+    width: min(92vw, 420px);
+    padding: 16px 20px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--mv-grad);
+    color: #fff;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    box-shadow: var(--mv-glow);
+    animation: mv-premium-pop 2.4s ease-in-out infinite;
+}
+@keyframes mv-premium-pop {
+    0%,
+    100% {
+        box-shadow:
+            0 10px 30px rgba(244, 63, 94, 0.28),
+            0 0 0 0 rgba(244, 63, 94, 0.45);
+    }
+    50% {
+        box-shadow:
+            0 10px 30px rgba(244, 63, 94, 0.28),
+            0 0 0 12px rgba(244, 63, 94, 0);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .mv-premium-btn {
+        animation: none;
+    }
+}
+
+/* Popup des services */
+.mv-premium {
+    backdrop-filter: blur(8px);
+}
+.mv-premium-box {
+    position: relative;
+    width: min(92vw, 380px);
+    padding: 26px 22px 20px;
+    border-radius: 22px;
+    background: var(--mv-card);
+    border: 1px solid var(--mv-line);
+    text-align: center;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    animation: mv-premium-in 0.25s ease-out;
+}
+@keyframes mv-premium-in {
+    from {
+        transform: translateY(16px) scale(0.97);
+    }
+    to {
+        transform: none;
+    }
+}
+.mv-premium-tag {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: rgba(244, 63, 94, 0.15);
+    color: var(--mv-rose);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.mv-premium-box h2 {
+    margin: 12px 0 8px;
+    font-size: 22px;
+    font-weight: 800;
+}
+.mv-premium-trial {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--mv-rose);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+.mv-premium-price {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 8px;
+}
+.mv-premium-price s {
+    color: var(--mv-muted);
+    font-size: 15px;
+}
+.mv-premium-price b {
+    color: var(--mv-rose);
+    font-size: 30px;
+    font-weight: 800;
+}
+.mv-premium-renew {
+    margin: 2px 0 14px;
+    color: var(--mv-muted);
+    font-size: 12px;
+}
+.mv-premium-list {
+    margin: 0 0 18px;
+    padding: 0;
+    list-style: none;
+    text-align: left;
+}
+.mv-premium-list li {
+    position: relative;
+    padding: 6px 0 6px 18px;
+    font-size: 14px;
+}
+.mv-premium-list li::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 13px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mv-rose);
+}
+.mv-premium-go {
+    width: 100%;
+    padding: 15px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--mv-grad);
+    color: #fff;
+    font-weight: 800;
+    font-size: 16px;
+    box-shadow: var(--mv-glow);
+}
+.mv-premium-legal {
+    margin: 12px 0 0;
+    color: var(--mv-muted);
+    font-size: 11px;
 }
 </style>
