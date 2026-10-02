@@ -97,13 +97,8 @@ function cleanupSelector() {
 
 watch(
     () => showRencontreModal.value,
-    async (isOpen) => {
-        if (!isOpen) {
-            cleanupSelector();
-        } else {
-            await nextTick();
-            cleanupSelector();
-        }
+    (isOpen) => {
+        if (!isOpen) cleanupSelector();
     },
 );
 
@@ -123,9 +118,23 @@ const triggerDebloquerCta = () => {
 };
 
 const openOffer = async () => {
+    hasInteracted = true;
+    showPremium.value = false;
     showRencontreModal.value = true;
     await nextTick();
+    cleanupSelector();
     triggerDebloquerCta();
+};
+
+/* Popup des services : s'ouvre seule après 5 s si le visiteur n'a rien touché */
+const AUTO_POPUP_DELAY = 5000;
+let hasInteracted = false;
+let autoPopupTimer: ReturnType<typeof setTimeout> | null = null;
+
+const markInteracted = (e: Event) => {
+    // Le clic qui ferme la popup ne compte pas comme une interaction "avant"
+    if ((e.target as HTMLElement | null)?.closest?.('.mv-premium')) return;
+    hasInteracted = true;
 };
 
 const goPremium = async () => {
@@ -169,6 +178,13 @@ function loadExternalScript(src: string): Promise<void> {
 onMounted(async () => {
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('keydown', onKeydown);
+    window.addEventListener('pointerdown', markInteracted, { passive: true });
+
+    autoPopupTimer = setTimeout(() => {
+        if (!hasInteracted && !showRencontreModal.value) {
+            showPremium.value = true;
+        }
+    }, AUTO_POPUP_DELAY);
 
     if (props.profile.script_url) {
         try {
@@ -187,6 +203,8 @@ onMounted(async () => {
 onUnmounted(() => {
     window.removeEventListener('scroll', handleScroll);
     window.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('pointerdown', markInteracted);
+    if (autoPopupTimer) clearTimeout(autoPopupTimer);
     if (ptScriptEl?.parentNode) {
         ptScriptEl.parentNode.removeChild(ptScriptEl);
         ptScriptEl = null;
@@ -673,7 +691,7 @@ onUnmounted(() => {
                     class="mv-box"
                     role="dialog"
                     aria-modal="true"
-                    aria-labelledby="mv-modal-title"
+                    aria-label="Inscription"
                 >
                     <button
                         type="button"
@@ -694,24 +712,6 @@ onUnmounted(() => {
                         </svg>
                     </button>
 
-                    <div class="mv-box-avatar">
-                        <img
-                            v-if="profile.avatar_url"
-                            :src="profile.avatar_url"
-                            :alt="profile.name"
-                        />
-                    </div>
-                    <h2 id="mv-modal-title">Rejoins mon VIP 😍</h2>
-                    <div class="mv-box-sub">
-                        {{ profile.name }} t'attend de l'autre côté
-                    </div>
-
-                    <div class="mv-perks">
-                        <span><em>🔥</em>Nudes &amp; vidéos</span>
-                        <span><em>💬</em>Chat illimité</span>
-                        <span><em>📍</em>Rencontres</span>
-                    </div>
-
                     <div id="selector" class="mv-selector"></div>
                 </div>
             </div>
@@ -727,7 +727,7 @@ onUnmounted(() => {
                 v-if="!showPremium && !showRencontreModal"
                 type="button"
                 class="mv-premium-btn"
-                @click="showPremium = true"
+                @click="openOffer"
             >
                 Accès premium · {{ OFFER.price.replace('.', ',') }} €
             </button>
@@ -1502,6 +1502,15 @@ onUnmounted(() => {
 }
 .mv-selector {
     text-align: left;
+    min-height: 120px;
+}
+.mv-selector:empty::before {
+    content: 'Chargement…';
+    display: block;
+    padding: 40px 0;
+    text-align: center;
+    color: var(--mv-muted);
+    font-size: 14px;
 }
 
 /* Barre flottante */
