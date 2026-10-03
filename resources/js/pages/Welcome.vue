@@ -52,7 +52,7 @@ const props = defineProps<{
  * ------------------------------------------------------------------ */
 const OFFER = {
     // Nom du service vers lequel renvoie le bouton (affiché dans la popup)
-    service: 'FansLink',
+    service: 'MonVip',
     price: '1.04',
     oldPrice: '28.93',
     per: 'par semaine',
