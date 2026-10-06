@@ -27,6 +27,9 @@ return new class extends Migration
         $used = [];
         foreach (DB::table('profiles')->orderBy('id')->get() as $profile) {
             $base = Str::slug(Str::before($profile->name, '_')) ?: 'profil';
+            if (in_array($base, \App\Models\Profile::RESERVED_SLUGS, true)) {
+                $base .= '-vip';
+            }
             $slug = $base;
             $i = 2;
             while (in_array($slug, $used, true)) {
