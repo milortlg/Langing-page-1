@@ -19,6 +19,11 @@ class PostsTable
                     ->collection('media')
                     ->label('Média')
                     ->limit(1),
+                Tables\Columns\TextColumn::make('profile.name')
+                    ->label('Profil')
+                    ->badge()
+                    ->placeholder('Aucun')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('content')
                     ->label('Contenu')
                     ->limit(50)
@@ -58,6 +63,10 @@ class PostsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('profile_id')
+                    ->label('Profil')
+                    ->relationship('profile', 'name')
+                    ->preload(),
                 Tables\Filters\SelectFilter::make('type')
                     ->label('Type')
                     ->options([
