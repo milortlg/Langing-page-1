@@ -8,6 +8,9 @@ use Filament\Schemas\Components\Section;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Components\TimePicker;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use App\Models\Profile;
+use Illuminate\Support\Str;
 
 class ProfileForm
 {
@@ -20,7 +23,29 @@ class ProfileForm
                         Forms\Components\TextInput::make('name')
                             ->label('Nom')
                             ->required()
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function (Get $get, Set $set, ?string $state, string $operation) {
+                                // À la création, propose automatiquement le lien à partir du nom
+                                if ($operation === 'create' && blank($get('slug'))) {
+                                    $set('slug', Profile::uniqueSlugFrom($state));
+                                }
+                            }),
+                        Forms\Components\TextInput::make('slug')
+                            ->label('Lien public')
+                            ->prefix(fn () => Str::finish(preg_replace('#^https?://#', '', config('app.url')), '/'))
+                            ->helperText('Le lien à mettre dans tes pubs. Lettres minuscules, chiffres et tirets uniquement.')
+                            ->required()
+                            ->maxLength(100)
+                            ->regex('/^[a-z0-9-]+$/')
+                            ->notIn(Profile::RESERVED_SLUGS)
+                            ->unique(ignoreRecord: true)
+                            ->validationMessages([
+                                'regex' => 'Utilise uniquement des lettres minuscules, des chiffres et des tirets (ex : alycia).',
+                                'not_in' => 'Ce lien est réservé par le site, choisis-en un autre.',
+                                'unique' => 'Ce lien est déjà utilisé par un autre profil.',
+                            ])
+                            ->dehydrateStateUsing(fn (?string $state) => Str::slug((string) $state)),
                         Forms\Components\Textarea::make('biography')
                             ->placeholder('Je suis une femme qui aime les hommes qui osent. 💋')
                             ->label('Biographie')
