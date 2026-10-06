@@ -6,6 +6,7 @@ use Filament\Forms;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
+use App\Models\Profile;
 
 class PostForm
 {
@@ -19,6 +20,16 @@ class PostForm
             Section::make('Contenu')
                 ->description('Texte et type de publication')
                 ->schema([
+                    Forms\Components\Select::make('profile_id')
+                        ->label('Profil')
+                        ->relationship('profile', 'name')
+                        ->required()
+                        ->preload()
+                        ->searchable()
+                        // Pré-sélectionne le profil filtré dans la liste, sinon le premier profil
+                        ->default(fn () => request()->integer('profile') ?: Profile::orderBy('id')->value('id'))
+                        ->columnSpanFull(),
+
                     Forms\Components\Textarea::make('content')
                         ->label('Contenu')
                         ->rows(4)
