@@ -5,7 +5,9 @@ namespace App\Filament\Resources\ProfileResource\Tables;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Columns\SpatieMediaLibraryImageColumn;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use App\Models\Profile;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 
@@ -22,6 +24,18 @@ class ProfilesTable
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nom')
                     ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('slug')
+                    ->label('Lien')
+                    ->formatStateUsing(fn (Profile $record) => preg_replace('#^https?://#', '', $record->public_url))
+                    ->copyable()
+                    ->copyableState(fn (Profile $record) => $record->public_url)
+                    ->copyMessage('Lien copié !')
+                    ->icon('heroicon-o-link')
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('posts_count')
+                    ->label('Publications')
+                    ->counts('posts')
                     ->sortable(),
                 Tables\Columns\IconColumn::make('is_online')
                     ->label('En ligne')
@@ -50,6 +64,12 @@ class ProfilesTable
                 //
             ])
             ->recordActions([
+                Action::make('view')
+                    ->label('Voir la page')
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->color('gray')
+                    ->url(fn (Profile $record) => $record->public_url)
+                    ->openUrlInNewTab(),
                 EditAction::make()
                     ->label('Modifier'),
             ])
