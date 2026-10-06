@@ -114,24 +114,27 @@ class ProfileForm
                     ]),
 
                 Section::make('Indicateurs')
-                    ->description('Ces valeurs sont gérées manuellement depuis l\'admin')
+                    ->description('Texte libre, affiché tel quel sur la page : 371, 31,3k, 1,2M…')
                     ->schema([
                         Forms\Components\TextInput::make('photos_count')
                             ->label('Nombre de photos')
-                            ->numeric()
-                            ->default(0)
+                            ->placeholder('ex : 371, 31,3k, 1,2M')
+                            ->maxLength(30)
+                            ->default('0')
                             ->required(),
 
                         Forms\Components\TextInput::make('videos_count')
                             ->label('Nombre de vidéos')
-                            ->numeric()
-                            ->default(0)
+                            ->placeholder('ex : 371, 31,3k, 1,2M')
+                            ->maxLength(30)
+                            ->default('0')
                             ->required(),
 
                         Forms\Components\TextInput::make('likes_count')
                             ->label('Nombre de likes')
-                            ->numeric()
-                            ->default(0)
+                            ->placeholder('ex : 371, 31,3k, 1,2M')
+                            ->maxLength(30)
+                            ->default('0')
                             ->required(),
                     ])
                     ->columns(3),
