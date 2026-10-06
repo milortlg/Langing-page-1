@@ -4,7 +4,6 @@ namespace App\Providers;
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Throwable;
 
@@ -28,11 +27,11 @@ class AppServiceProvider extends ServiceProvider
 
     /**
      * Mise à jour automatique (hébergement sans accès terminal) :
-     * à la première visite après un déploiement, applique les migrations
-     * en attente (ex : multi-profils) puis vide les caches.
+     * à la première visite après l'ajout d'une nouvelle migration,
+     * applique les migrations en attente puis vide les caches.
      *
-     * Un fichier "verrou" dans storage/ évite de refaire la vérification
-     * à chaque visite : le coût est d'un simple file_exists().
+     * Un fichier "verrou" (nommé d'après la dernière migration) évite de
+     * relancer la vérification à chaque visite.
      */
     private function runPendingMigrationsOnce(): void
     {
@@ -40,21 +39,26 @@ class AppServiceProvider extends ServiceProvider
             return;
         }
 
-        $flag = storage_path('framework/migrated-multi-profils');
+        $migrations = glob(database_path('migrations/*.php')) ?: [];
+        if (! $migrations) {
+            return;
+        }
+        sort($migrations);
+        $latest = basename(end($migrations), '.php');
+
+        $flag = storage_path('framework/migrated-'.$latest);
         if (file_exists($flag)) {
             return;
         }
 
         try {
-            if (Schema::hasTable('profiles') && ! Schema::hasColumn('profiles', 'slug')) {
-                Artisan::call('migrate', ['--force' => true]);
-                Artisan::call('optimize:clear');
-                Log::info('Migrations multi-profils appliquées automatiquement.', ['output' => Artisan::output()]);
-            }
+            Artisan::call('migrate', ['--force' => true]);
+            Artisan::call('optimize:clear');
+            Log::info('Migrations appliquées automatiquement.', ['jusqu_a' => $latest]);
 
             @file_put_contents($flag, now()->toDateTimeString());
         } catch (Throwable $e) {
-            // On ne crée pas le verrou : nouvelle tentative à la prochaine visite.
+            // Pas de verrou : nouvelle tentative à la prochaine visite.
             Log::error('Migration automatique impossible : '.$e->getMessage());
         }
     }
