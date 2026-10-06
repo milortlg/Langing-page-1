@@ -14,7 +14,6 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use UnitEnum;
-use Filament\Notifications\Notification;
 
 class ProfileResource extends Resource
 {
@@ -24,7 +23,7 @@ class ProfileResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
-    protected static ?string $navigationLabel = 'Profil';
+    protected static ?string $navigationLabel = 'Profils';
 
     protected static ?string $modelLabel = 'Profil';
 
@@ -54,19 +53,5 @@ class ProfileResource extends Resource
             'create' => CreateProfile::route('/create'),
             'edit' => EditProfile::route('/{record}/edit'),
         ];
-    }
-
-    public static function canCreate(): bool
-    {
-        // On ne permet la création que si le profil n'existe pas et notifier l'utilisateur
-        if (Profile::exists()) {
-            Notification::make()
-                ->title('Un profil déjà existant')
-                ->body('Un profil déjà existe. Veuillez l\'éditer ou supprimer le profil existant.')
-                ->danger()
-                ->send();
-            return false;
-        }
-        return ! Profile::exists();
     }
 }
